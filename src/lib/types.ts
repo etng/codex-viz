@@ -53,3 +53,17 @@ export type SessionTimelineResponse = {
   truncated: boolean;
   events: TimelineEvent[];
 };
+
+export type WordCloudItem = {
+  name: string;
+  value: number;
+};
+
+export type WordCloudResponse = {
+  generatedAt: string;
+  days: number | null;
+  limit: number;
+  minCount: number;
+  totalUnique: number;
+  items: WordCloudItem[];
+};

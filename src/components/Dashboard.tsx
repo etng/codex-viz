@@ -3,6 +3,7 @@
 import useSWR from "swr";
 import dynamic from "next/dynamic";
 import type { IndexSnapshot } from "@/lib/types";
+import UserWordCloud from "@/components/UserWordCloud";
 
 const ReactECharts = dynamic(() => import("echarts-for-react"), { ssr: false });
 
@@ -94,7 +95,10 @@ export default function Dashboard() {
           )}
         </ol>
       </div>
+
+      <div className="md:col-span-3">
+        <UserWordCloud />
+      </div>
     </section>
   );
 }
-

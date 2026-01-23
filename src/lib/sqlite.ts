@@ -61,5 +61,15 @@ export function migrateDb() {
     );
 
     CREATE INDEX IF NOT EXISTS idx_tool_counts_tool_name ON tool_counts(tool_name);
+
+    CREATE TABLE IF NOT EXISTS user_token_counts (
+      file TEXT NOT NULL,
+      token TEXT NOT NULL,
+      count INTEGER NOT NULL,
+      PRIMARY KEY (file, token),
+      FOREIGN KEY(file) REFERENCES files(file) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_user_token_counts_token ON user_token_counts(token);
   `);
 }

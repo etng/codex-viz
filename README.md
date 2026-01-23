@@ -4,6 +4,7 @@
 
 - 索引：SQLite（本地文件，默认 `~/.codex-viz/cache/index.sqlite`）
 - 详情时间线：按需从 jsonl 解析，并缓存为 JSON
+- 词云：对 user 输入做轻量分词（英文词 + 中文 2/3-gram）
 
 ## 启动
 

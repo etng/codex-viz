@@ -112,6 +112,7 @@ async function buildFileIndex(file: string) {
   const sessionId = path.basename(file, ".jsonl");
   const tools: Record<string, number> = {};
   const callIdToToolName = new Map<string, string>();
+  const userTexts: string[] = [];
 
   let summary: SessionSummary = {
     id: sessionId,
@@ -158,6 +159,10 @@ async function buildFileIndex(file: string) {
       if (pt === "message") {
         const role = payload.role;
         if (role === "user" || role === "assistant") summary.messages += 1;
+        if (role === "user") {
+          const txt = extractMessageText(payload);
+          if (txt) userTexts.push(txt);
+        }
       } else if (pt === "function_call" || pt === "custom_tool_call") {
         summary.toolCalls += 1;
         const name = typeof payload.name === "string" ? payload.name : "unknown";
@@ -197,7 +202,137 @@ async function buildFileIndex(file: string) {
   }
 
   const dailyKey = dayKeyFromIso(summary.startedAt ?? firstTs);
-  return { sessionId, summary, tools, dailyKey };
+  const userTokenCounts = tokenizeUserTexts(userTexts);
+  return { sessionId, summary, tools, dailyKey, userTokenCounts };
+}
+
+function stripCodeAndUrls(input: string) {
+  let s = input;
+  s = s.replace(/```[\s\S]*?```/g, " ");
+  s = s.replace(/`[^`]*`/g, " ");
+  s = s.replace(/https?:\/\/\S+/g, " ");
+  s = s.replace(/\b[a-f0-9]{32,}\b/gi, " "); // hashes
+  return s;
+}
+
+const STOPWORDS_ZH = new Set([
+  "的",
+  "了",
+  "是",
+  "我",
+  "你",
+  "他",
+  "她",
+  "它",
+  "我们",
+  "你们",
+  "他们",
+  "她们",
+  "它们",
+  "这",
+  "那",
+  "一个",
+  "一下",
+  "一下子",
+  "以及",
+  "还有",
+  "但是",
+  "因为",
+  "所以",
+  "如果",
+  "然后",
+  "可以",
+  "需要",
+  "怎么",
+  "为什么",
+  "什么",
+  "请",
+  "帮我",
+  "一下吧"
+]);
+
+const STOPWORDS_EN = new Set([
+  "the",
+  "a",
+  "an",
+  "and",
+  "or",
+  "to",
+  "of",
+  "in",
+  "on",
+  "for",
+  "with",
+  "is",
+  "are",
+  "was",
+  "were",
+  "be",
+  "been",
+  "it",
+  "this",
+  "that",
+  "these",
+  "those",
+  "i",
+  "you",
+  "we",
+  "they",
+  "he",
+  "she",
+  "as",
+  "at",
+  "by",
+  "from",
+  "not"
+]);
+
+function addCount(map: Map<string, number>, token: string, inc = 1) {
+  const t = token.trim();
+  if (!t) return;
+  map.set(t, (map.get(t) ?? 0) + inc);
+}
+
+function tokenizeUserTexts(texts: string[]) {
+  const counts = new Map<string, number>();
+  for (const raw of texts) {
+    const cleaned = stripCodeAndUrls(raw).toLowerCase();
+
+    // 英文/数字混合词
+    const en = cleaned.match(/[a-z][a-z0-9_-]{1,}/g);
+    if (en) {
+      for (const w of en) {
+        if (w.length < 2 || w.length > 30) continue;
+        if (STOPWORDS_EN.has(w)) continue;
+        addCount(counts, w);
+      }
+    }
+
+    // 中文：取连续汉字块，再做 2/3-gram（更接近“词”）
+    const zhBlocks = cleaned.match(/[\u4e00-\u9fff]{2,}/g);
+    if (zhBlocks) {
+      for (const b of zhBlocks) {
+        if (STOPWORDS_ZH.has(b)) continue;
+        // 整块也算一个 token（短块更像词）
+        if (b.length <= 4) addCount(counts, b);
+        // 2-gram
+        for (let i = 0; i + 1 < b.length; i++) {
+          const t2 = b.slice(i, i + 2);
+          if (!STOPWORDS_ZH.has(t2)) addCount(counts, t2);
+        }
+        // 3-gram（只在块较长时）
+        if (b.length >= 4) {
+          for (let i = 0; i + 2 < b.length; i++) {
+            const t3 = b.slice(i, i + 3);
+            if (!STOPWORDS_ZH.has(t3)) addCount(counts, t3);
+          }
+        }
+      }
+    }
+  }
+  const obj: Record<string, number> = {};
+  for (const [k, v] of counts) obj[k] = v;
+  return obj;
 }
 
 async function refreshSqliteIndex(): Promise<void> {
@@ -215,6 +350,7 @@ async function refreshSqliteIndex(): Promise<void> {
   const selectPrev = d.prepare("SELECT mtime_ms as mtimeMs, size FROM files WHERE file = ?");
   const deleteFile = d.prepare("DELETE FROM files WHERE file = ?");
   const deleteToolCounts = d.prepare("DELETE FROM tool_counts WHERE file = ?");
+  const deleteUserTokenCounts = d.prepare("DELETE FROM user_token_counts WHERE file = ?");
   const upsertFile = d.prepare(`
     INSERT INTO files (
       file, mtime_ms, size, session_id, daily_key,
@@ -245,6 +381,11 @@ async function refreshSqliteIndex(): Promise<void> {
     VALUES (?, ?, ?)
     ON CONFLICT(file, tool_name) DO UPDATE SET count=excluded.count
   `);
+  const upsertUserToken = d.prepare(`
+    INSERT INTO user_token_counts (file, token, count)
+    VALUES (?, ?, ?)
+    ON CONFLICT(file, token) DO UPDATE SET count=excluded.count
+  `);
 
   d.exec("BEGIN IMMEDIATE");
   try {
@@ -252,6 +393,7 @@ async function refreshSqliteIndex(): Promise<void> {
     for (const row of existingRows) {
       if (!fileSet.has(row.file)) {
         deleteToolCounts.run(row.file);
+        deleteUserTokenCounts.run(row.file);
         deleteFile.run(row.file);
       }
     }
@@ -288,6 +430,12 @@ async function refreshSqliteIndex(): Promise<void> {
       deleteToolCounts.run(file);
       for (const [name, count] of Object.entries(built.tools)) {
         upsertTool.run(file, name, count);
+      }
+
+      deleteUserTokenCounts.run(file);
+      for (const [token, count] of Object.entries(built.userTokenCounts)) {
+        if (!token || count <= 0) continue;
+        upsertUserToken.run(file, token, count);
       }
     }
 
@@ -428,6 +576,78 @@ export async function listSessions(options: {
   }));
 
   return { generatedAt: new Date().toISOString(), total: Number(totalRow.c ?? 0), items };
+}
+
+export async function getUserWordCloud(options: {
+  days?: number | null;
+  limit?: number;
+  minCount?: number;
+  q?: string;
+  withTools?: boolean;
+  withErrors?: boolean;
+}) {
+  await ensureFreshIndex();
+  const d = getDb();
+
+  const limit = Math.min(Math.max(options.limit ?? 200, 1), 1000);
+  const minCount = Math.min(Math.max(options.minCount ?? 2, 1), 1000);
+  const days = options.days == null ? null : Math.min(Math.max(options.days, 1), 3650);
+
+  const where: string[] = [];
+  const params: any[] = [];
+
+  if (options.withTools) where.push("f.tool_calls > 0");
+  if (options.withErrors) where.push("f.errors > 0");
+
+  const q = options.q?.trim();
+  if (q) {
+    where.push("(f.session_id LIKE ? OR IFNULL(f.cwd,'') LIKE ? OR IFNULL(f.originator,'') LIKE ?)");
+    const like = `%${q}%`;
+    params.push(like, like, like);
+  }
+
+  if (days != null) {
+    const minIso = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+    where.push("(f.started_at IS NOT NULL AND f.started_at >= ?)");
+    params.push(minIso);
+  }
+
+  const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+
+  const totalUniqueRow = d
+    .prepare(
+      `SELECT COUNT(*) as c FROM (
+        SELECT utc.token
+        FROM user_token_counts utc
+        JOIN files f ON f.file = utc.file
+        ${whereSql}
+        GROUP BY utc.token
+        HAVING SUM(utc.count) >= ?
+      )`
+    )
+    .get(...params, minCount) as any;
+
+  const rows = d
+    .prepare(
+      `SELECT utc.token as name, SUM(utc.count) as value
+       FROM user_token_counts utc
+       JOIN files f ON f.file = utc.file
+       ${whereSql}
+       GROUP BY utc.token
+       HAVING SUM(utc.count) >= ?
+       ORDER BY value DESC
+       LIMIT ?`
+    )
+    .all(...params, minCount, limit) as any[];
+
+  return {
+    generatedAt: new Date().toISOString(),
+    days,
+    limit,
+    minCount,
+    totalUnique: Number(totalUniqueRow.c ?? 0),
+    items: rows.map((r) => ({ name: String(r.name), value: Number(r.value ?? 0) }))
+  };
 }
 
 async function getSessionById(sessionId: string): Promise<SessionSummary | null> {
