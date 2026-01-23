@@ -33,7 +33,12 @@ export type IndexSnapshot = {
   };
   tools: Record<string, number>;
   daily: Record<string, DailyAgg>;
-  sessions: SessionSummary[];
+};
+
+export type SessionsListResponse = {
+  generatedAt: string;
+  total: number;
+  items: SessionSummary[];
 };
 
 export type TimelineEvent = {
@@ -48,4 +53,3 @@ export type SessionTimelineResponse = {
   truncated: boolean;
   events: TimelineEvent[];
 };
-

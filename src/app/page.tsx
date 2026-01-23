@@ -7,7 +7,7 @@ export default async function Page() {
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Codex Viz</h1>
-          <p className="mt-1 text-sm text-zinc-600">本地读取 ~/.codex/sessions，轻缓存，无数据库。</p>
+          <p className="mt-1 text-sm text-zinc-600">本地读取 ~/.codex/sessions，SQLite 索引加速。</p>
         </div>
         <div className="flex gap-2">
           <Link
@@ -32,4 +32,3 @@ export default async function Page() {
     </main>
   );
 }
-

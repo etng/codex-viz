@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
-import type { IndexSnapshot, SessionSummary } from "@/lib/types";
+import type { SessionSummary, SessionsListResponse } from "@/lib/types";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -22,34 +22,33 @@ function formatSec(sec: number | null) {
 }
 
 export default function SessionsTable() {
-  const { data, error, isLoading } = useSWR<IndexSnapshot>("/api/index", fetcher, {
-    refreshInterval: 15_000
-  });
-
   const [onlyWithTools, setOnlyWithTools] = useState(false);
   const [onlyWithErrors, setOnlyWithErrors] = useState(false);
   const [q, setQ] = useState("");
+  const [limit] = useState(100);
+  const [offset, setOffset] = useState(0);
+
+  useEffect(() => {
+    setOffset(0);
+  }, [onlyWithTools, onlyWithErrors, q]);
+
+  const key = useMemo(() => {
+    const sp = new URLSearchParams();
+    if (q.trim()) sp.set("q", q.trim());
+    if (onlyWithTools) sp.set("withTools", "1");
+    if (onlyWithErrors) sp.set("withErrors", "1");
+    sp.set("limit", String(limit));
+    sp.set("offset", String(offset));
+    return `/api/sessions?${sp.toString()}`;
+  }, [q, onlyWithTools, onlyWithErrors, limit, offset]);
+
+  const { data, error, isLoading } = useSWR<SessionsListResponse>(key, fetcher, {
+    refreshInterval: 15_000
+  });
 
   const sessions = useMemo(() => {
-    const list = data?.sessions ?? [];
-    const qq = q.trim().toLowerCase();
-    return list
-      .filter((s) => (!onlyWithTools ? true : (s.toolCalls ?? 0) > 0))
-      .filter((s) => (!onlyWithErrors ? true : (s.errors ?? 0) > 0))
-      .filter((s) => {
-        if (!qq) return true;
-        return (
-          s.id.toLowerCase().includes(qq) ||
-          (s.cwd ?? "").toLowerCase().includes(qq) ||
-          (s.originator ?? "").toLowerCase().includes(qq)
-        );
-      })
-      .sort((a, b) => {
-        const ta = a.startedAt ? new Date(a.startedAt).getTime() : 0;
-        const tb = b.startedAt ? new Date(b.startedAt).getTime() : 0;
-        return tb - ta;
-      });
-  }, [data?.sessions, onlyWithTools, onlyWithErrors, q]);
+    return data?.items ?? [];
+  }, [data?.items]);
 
   if (error) {
     return (
@@ -95,6 +94,37 @@ export default function SessionsTable() {
             placeholder="搜索 id/cwd/originator…"
             className="w-64 max-w-[70vw] rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-zinc-400"
           />
+        </div>
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-zinc-500">
+        <div>
+          共 {data?.total ?? 0} 条，当前展示 {sessions.length} 条（offset={offset}）
+        </div>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => setOffset(0)}
+            className="rounded-md border border-zinc-200 bg-white px-2 py-1 hover:bg-zinc-50"
+          >
+            回到第一页
+          </button>
+          <button
+            type="button"
+            disabled={offset === 0}
+            onClick={() => setOffset((v) => Math.max(0, v - limit))}
+            className="rounded-md border border-zinc-200 bg-white px-2 py-1 hover:bg-zinc-50 disabled:opacity-50"
+          >
+            上一页
+          </button>
+          <button
+            type="button"
+            disabled={offset + limit >= (data?.total ?? 0)}
+            onClick={() => setOffset((v) => v + limit)}
+            className="rounded-md border border-zinc-200 bg-white px-2 py-1 hover:bg-zinc-50 disabled:opacity-50"
+          >
+            下一页
+          </button>
         </div>
       </div>
 
@@ -144,4 +174,3 @@ export default function SessionsTable() {
     </section>
   );
 }
-
