@@ -43,6 +43,10 @@ pnpm dev
 - 需要快速复盘近期任务与工具使用偏好
 - 希望用更直观的方式理解 Token 消耗
 
+## 许可
+
+MIT License，详见 `LICENSE`。
+
 ---
 
 # Codex Viz (Local)
@@ -79,3 +83,7 @@ Open `http://localhost:3000`
 - Track personal/team Codex usage and trends
 - Review recent work and tool preferences
 - Make token usage more tangible
+
+## License
+
+MIT License. See `LICENSE`.
