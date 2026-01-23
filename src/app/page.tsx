@@ -21,14 +21,28 @@ export default async function Page() {
 
       <Dashboard />
 
-      <section className="rounded-xl border border-zinc-200 bg-white p-4">
-        <h2 className="text-sm font-medium text-zinc-900">提示</h2>
-        <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-zinc-700">
-          <li>首次打开会进行索引（流式解析 jsonl），之后会增量更新缓存。</li>
-          <li>默认读取目录：~/.codex/sessions，可用环境变量 CODEX_SESSIONS_DIR 覆盖。</li>
-          <li>默认缓存目录：~/.codex-viz/cache，可用环境变量 CODEX_VIZ_CACHE_DIR 覆盖。</li>
-        </ul>
+      <section className="panel rounded-2xl p-4">
+        <details className="group">
+          <summary className="flex cursor-pointer items-center justify-between text-sm font-medium text-slate-700">
+            <span className="flex items-center gap-2">
+              <span className="inline-flex h-2 w-2 rounded-full bg-blue-400" />
+              提示
+            </span>
+            <span className="text-xs text-slate-400 transition-transform group-open:rotate-90">▶</span>
+          </summary>
+          <div className="mt-3 rounded-xl border border-slate-200 bg-white/70 p-3">
+            <ul className="list-disc space-y-1 pl-5 text-sm text-slate-600">
+              <li>首次打开会进行索引（流式解析 jsonl），之后会增量更新缓存。</li>
+              <li>默认读取目录：~/.codex/sessions，可用环境变量 CODEX_SESSIONS_DIR 覆盖。</li>
+              <li>默认缓存目录：~/.codex-viz/cache，可用环境变量 CODEX_VIZ_CACHE_DIR 覆盖。</li>
+            </ul>
+          </div>
+        </details>
       </section>
+
+      <footer className="py-4 text-center text-xs text-slate-400">
+        Powered by onewesong with ♥️
+      </footer>
     </main>
   );
 }

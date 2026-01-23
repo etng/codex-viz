@@ -30,43 +30,29 @@ export default function Dashboard() {
     refreshInterval: 15_000
   });
   const [zoom, setZoom] = useState<{ start: number; end: number } | null>(null);
+  const safeDaily = data?.daily ?? {};
+  const safeTools = data?.tools ?? {};
 
-  if (error) {
-    return (
-      <section className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
-        载入失败：{String(error)}
-      </section>
-    );
-  }
-
-  if (isLoading || !data) {
-    return (
-      <section className="rounded-xl border border-zinc-200 bg-white p-4 text-sm text-zinc-700">
-        正在索引并加载数据…
-      </section>
-    );
-  }
-
-  const dailyKeys = useMemo(() => Object.keys(data.daily).sort(), [data.daily]);
-  const dailySessions = useMemo(() => dailyKeys.map((k) => data.daily[k]?.sessions ?? 0), [dailyKeys, data.daily]);
-  const dailyMessages = useMemo(() => dailyKeys.map((k) => data.daily[k]?.messages ?? 0), [dailyKeys, data.daily]);
-  const dailyTools = useMemo(() => dailyKeys.map((k) => data.daily[k]?.toolCalls ?? 0), [dailyKeys, data.daily]);
-  const dailyErrors = useMemo(() => dailyKeys.map((k) => data.daily[k]?.errors ?? 0), [dailyKeys, data.daily]);
-  const dailyTokens = useMemo(() => dailyKeys.map((k) => data.daily[k]?.tokensTotal ?? 0), [dailyKeys, data.daily]);
-  const dailyTokensInput = useMemo(() => dailyKeys.map((k) => data.daily[k]?.tokensInput ?? 0), [dailyKeys, data.daily]);
+  const dailyKeys = useMemo(() => Object.keys(safeDaily).sort(), [safeDaily]);
+  const dailySessions = useMemo(() => dailyKeys.map((k) => safeDaily[k]?.sessions ?? 0), [dailyKeys, safeDaily]);
+  const dailyMessages = useMemo(() => dailyKeys.map((k) => safeDaily[k]?.messages ?? 0), [dailyKeys, safeDaily]);
+  const dailyTools = useMemo(() => dailyKeys.map((k) => safeDaily[k]?.toolCalls ?? 0), [dailyKeys, safeDaily]);
+  const dailyErrors = useMemo(() => dailyKeys.map((k) => safeDaily[k]?.errors ?? 0), [dailyKeys, safeDaily]);
+  const dailyTokens = useMemo(() => dailyKeys.map((k) => safeDaily[k]?.tokensTotal ?? 0), [dailyKeys, safeDaily]);
+  const dailyTokensInput = useMemo(() => dailyKeys.map((k) => safeDaily[k]?.tokensInput ?? 0), [dailyKeys, safeDaily]);
   const dailyTokensOutput = useMemo(
-    () => dailyKeys.map((k) => data.daily[k]?.tokensOutput ?? 0),
-    [dailyKeys, data.daily]
+    () => dailyKeys.map((k) => safeDaily[k]?.tokensOutput ?? 0),
+    [dailyKeys, safeDaily]
   );
   const dailyTokensCachedInput = useMemo(
-    () => dailyKeys.map((k) => data.daily[k]?.tokensCachedInput ?? 0),
-    [dailyKeys, data.daily]
+    () => dailyKeys.map((k) => safeDaily[k]?.tokensCachedInput ?? 0),
+    [dailyKeys, safeDaily]
   );
   const dailyTokensReasoningOutput = useMemo(
-    () => dailyKeys.map((k) => data.daily[k]?.tokensReasoningOutput ?? 0),
-    [dailyKeys, data.daily]
+    () => dailyKeys.map((k) => safeDaily[k]?.tokensReasoningOutput ?? 0),
+    [dailyKeys, safeDaily]
   );
-  const dailyTokensPrompt = useMemo(() => dailyKeys.map((k) => data.daily[k]?.tokensInput ?? 0), [dailyKeys, data.daily]);
+  const dailyTokensPrompt = useMemo(() => dailyKeys.map((k) => safeDaily[k]?.tokensInput ?? 0), [dailyKeys, safeDaily]);
 
   const { rangeStart, rangeEnd } = useMemo(() => {
     const total = dailyKeys.length;
@@ -104,46 +90,116 @@ export default function Dashboard() {
     ]
   );
 
-  const topTools = Object.entries(data.tools)
+  const topTools = Object.entries(safeTools)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 10);
 
+  if (error) {
+    return (
+      <section className="panel rounded-2xl p-4 text-sm text-rose-600">
+        载入失败：{String(error)}
+      </section>
+    );
+  }
+
+  if (isLoading || !data) {
+    return (
+      <section className="panel rounded-2xl p-4 text-sm text-slate-500">
+        正在索引并加载数据…
+      </section>
+    );
+  }
+
+  const rangeLabel = `${dailyKeys[rangeStart] ?? "-"} ~ ${dailyKeys[rangeEnd] ?? "-"}`;
+  const generatedAt = new Date(data.generatedAt).toLocaleString();
+
   return (
-    <section className="grid gap-4 md:grid-cols-3">
-      <div className="rounded-xl border border-zinc-200 bg-white p-4">
-        <div className="text-sm text-zinc-600">会话数</div>
-        <div className="mt-1 text-2xl font-semibold">{formatInt(stats.sessions)}</div>
-        <div className="mt-2 text-xs text-zinc-500">
-          区间：{dailyKeys[rangeStart] ?? "-"} ~ {dailyKeys[rangeEnd] ?? "-"}
+    <section className="space-y-6">
+      <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+        <div>
+          <div className="inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs text-blue-600">
+            Local-first Intelligence
+          </div>
+          <h1 className="mt-3 text-3xl font-semibold text-slate-900 md:text-4xl">Codex Viz 控制台</h1>
+          <p className="mt-2 max-w-2xl text-sm text-slate-600">
+            聚焦可追溯的趋势、Token 与工具效率。当前区间 {rangeLabel}，拖动时间轴即可重算指标。
+          </p>
         </div>
-        <div className="mt-1 text-xs text-zinc-500">更新时间：{new Date(data.generatedAt).toLocaleString()}</div>
-      </div>
-      <div className="rounded-xl border border-zinc-200 bg-white p-4">
-        <div className="text-sm text-zinc-600">消息数（用户+助手）</div>
-        <div className="mt-1 text-2xl font-semibold">{formatInt(stats.messages)}</div>
-        <div className="mt-2 text-xs text-zinc-500">工具调用：{formatInt(stats.toolCalls)}</div>
-      </div>
-      <div className="rounded-xl border border-zinc-200 bg-white p-4">
-        <div className="text-sm text-zinc-600">Token</div>
-        <div className="mt-1 text-2xl font-semibold">{formatInt(stats.tokensTotal)}</div>
-        <div className="mt-2 text-xs text-zinc-500">Prompt(含缓存) {formatInt(stats.tokensInput)}</div>
-        <div className="mt-1 text-xs text-zinc-500">
-          输入 {formatInt(stats.tokensInput)} / 缓存输入 {formatInt(stats.tokensCachedInput)}
+        <div className="flex flex-col items-start gap-3 md:items-end">
+          <div className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-xs text-slate-600">
+            更新于 {generatedAt}
+          </div>
+          <div className="flex items-center gap-2 text-xs text-slate-500">
+            <span className="h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.45)]" />
+            索引正常
+          </div>
         </div>
-        <div className="mt-1 text-xs text-zinc-500">
-          输出 {formatInt(stats.tokensOutput)} / 推理输出 {formatInt(stats.tokensReasoningOutput)}
-        </div>
-      </div>
-      <div className="rounded-xl border border-zinc-200 bg-white p-4">
-        <div className="text-sm text-zinc-600">错误/中断</div>
-        <div className="mt-1 text-2xl font-semibold">{formatInt(stats.errors)}</div>
-        <div className="mt-2 text-xs text-zinc-500">session 文件：{formatInt(data.totals.files)}</div>
       </div>
 
-      <div className="rounded-xl border border-zinc-200 bg-white p-4 md:col-span-3">
-        <div className="mb-2 text-sm font-medium text-zinc-900">趋势</div>
+      <div className="grid gap-4 md:grid-cols-4">
+        <div className="panel panel-glow relative overflow-hidden rounded-2xl p-5">
+          <div className="absolute -right-6 -top-6 h-24 w-24 rounded-full bg-blue-500/15 blur-2xl" />
+          <div className="text-xs uppercase tracking-[0.24em] text-slate-500">会话数</div>
+          <div className="mt-4 flex items-end justify-between">
+            <div className="mono text-3xl font-semibold text-slate-900">{formatInt(stats.sessions)}</div>
+            <span className="rounded-full border border-blue-200 bg-blue-50 px-2 py-1 text-[11px] text-blue-600">
+              区间
+            </span>
+          </div>
+          <div className="mt-3 text-xs text-slate-500">{rangeLabel}</div>
+        </div>
+
+        <div className="panel relative overflow-hidden rounded-2xl p-5">
+          <div className="absolute -right-6 -top-6 h-24 w-24 rounded-full bg-emerald-500/15 blur-2xl" />
+          <div className="text-xs uppercase tracking-[0.24em] text-slate-500">消息量</div>
+          <div className="mt-4 flex items-end justify-between">
+            <div className="mono text-3xl font-semibold text-slate-900">{formatInt(stats.messages)}</div>
+            <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] text-emerald-600">
+              工具 {formatInt(stats.toolCalls)}
+            </span>
+          </div>
+          <div className="mt-3 text-xs text-slate-500">用户 + 助手</div>
+        </div>
+
+        <div className="panel relative overflow-hidden rounded-2xl p-5">
+          <div className="absolute -right-6 -top-6 h-24 w-24 rounded-full bg-cyan-500/15 blur-2xl" />
+          <div className="text-xs uppercase tracking-[0.24em] text-slate-500">Token</div>
+          <div className="mt-4 flex flex-wrap items-end justify-between gap-2">
+            <div className="mono text-3xl font-semibold text-slate-900">{formatInt(stats.tokensTotal)}</div>
+            <span className="max-w-full rounded-full border border-cyan-200 bg-cyan-50 px-2 py-1 text-[11px] text-cyan-700">
+              Prompt {formatInt(stats.tokensInput)}
+            </span>
+          </div>
+          <div className="mt-3 text-xs text-slate-500">
+            缓存 {formatInt(stats.tokensCachedInput)} · 输出 {formatInt(stats.tokensOutput)}
+          </div>
+        </div>
+
+        <div className="panel relative overflow-hidden rounded-2xl p-5">
+          <div className="absolute -right-6 -top-6 h-24 w-24 rounded-full bg-amber-500/15 blur-2xl" />
+          <div className="text-xs uppercase tracking-[0.24em] text-slate-500">错误/中断</div>
+          <div className="mt-4 flex items-end justify-between">
+            <div className="mono text-3xl font-semibold text-slate-900">{formatInt(stats.errors)}</div>
+            <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] text-amber-700">
+              文件 {formatInt(data.totals.files)}
+            </span>
+          </div>
+          <div className="mt-3 text-xs text-slate-500">影响会话质量</div>
+        </div>
+      </div>
+
+      <div className="panel rounded-3xl p-5 md:p-6">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div className="text-sm font-semibold text-slate-900">趋势雷达</div>
+            <div className="mt-1 text-xs text-slate-500">多维度趋势，可缩放区间自动刷新指标</div>
+          </div>
+          <div className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-xs text-slate-600">
+            Zoom: {rangeLabel}
+          </div>
+        </div>
         <ReactECharts
-          style={{ height: 300 }}
+          style={{ height: 320 }}
           onEvents={{
             dataZoom: (params: any) => {
               const payload = Array.isArray(params?.batch) ? params.batch[0] : params;
@@ -154,18 +210,55 @@ export default function Dashboard() {
             }
           }}
           option={{
-            tooltip: { trigger: "axis" },
+            backgroundColor: "transparent",
+            color: ["#2563eb", "#16a34a", "#f59e0b", "#0ea5e9", "#22c55e", "#94a3b8", "#f97316", "#06b6d4", "#a855f7"],
+            tooltip: {
+              trigger: "axis",
+              backgroundColor: "rgba(255, 255, 255, 0.95)",
+              borderColor: "rgba(148, 163, 184, 0.35)",
+              textStyle: { color: "#0f172a" }
+            },
             legend: {
               data: ["会话", "消息", "工具", "Token", "Prompt(含缓存)", "输入", "输出", "缓存输入", "推理输出"],
-              selected: { 输入: false, 缓存输入: false }
+              selected: {
+                会话: true,
+                消息: true,
+                工具: true,
+                Token: false,
+                "Prompt(含缓存)": false,
+                输入: false,
+                输出: false,
+                缓存输入: false,
+                推理输出: false
+              },
+              textStyle: { color: "#64748b" }
             },
-            grid: { left: 40, right: 20, top: 30, bottom: 40 },
+            grid: { left: 40, right: 20, top: 36, bottom: 54 },
             dataZoom: [
               { type: "inside", xAxisIndex: 0, start: zoom?.start, end: zoom?.end },
-              { type: "slider", xAxisIndex: 0, height: 18, bottom: 8, start: zoom?.start, end: zoom?.end }
+              {
+                type: "slider",
+                xAxisIndex: 0,
+                height: 20,
+                bottom: 10,
+                borderColor: "rgba(148, 163, 184, 0.35)",
+                fillerColor: "rgba(37, 99, 235, 0.12)",
+                handleStyle: { color: "rgba(37, 99, 235, 0.6)" },
+                start: zoom?.start,
+                end: zoom?.end
+              }
             ],
-            xAxis: { type: "category", data: dailyKeys, axisLabel: { hideOverlap: true } },
-            yAxis: { type: "value" },
+            xAxis: {
+              type: "category",
+              data: dailyKeys,
+              axisLabel: { hideOverlap: true, color: "#64748b" },
+              axisLine: { lineStyle: { color: "rgba(148, 163, 184, 0.35)" } }
+            },
+            yAxis: {
+              type: "value",
+              axisLabel: { color: "#64748b" },
+              splitLine: { lineStyle: { color: "rgba(148, 163, 184, 0.18)" } }
+            },
             series: [
               { name: "会话", type: "line", smooth: true, data: dailySessions },
               { name: "消息", type: "line", smooth: true, data: dailyMessages },
@@ -181,24 +274,30 @@ export default function Dashboard() {
         />
       </div>
 
-      <div className="md:col-span-2">
-        <UserWordCloud />
-      </div>
-
-      <div className="rounded-xl border border-zinc-200 bg-white p-4">
-        <div className="mb-2 text-sm font-medium text-zinc-900">Top 工具</div>
-        <ol className="space-y-1 text-sm text-zinc-700">
-          {topTools.length === 0 ? (
-            <li className="text-zinc-500">暂无工具调用</li>
-          ) : (
-            topTools.map(([name, count]) => (
-              <li key={name} className="flex items-center justify-between gap-2">
-                <span className="truncate">{name}</span>
-                <span className="tabular-nums text-zinc-500">{formatInt(count)}</span>
-              </li>
-            ))
-          )}
-        </ol>
+      <div className="grid gap-4 md:grid-cols-3">
+        <div className="md:col-span-2">
+          <UserWordCloud />
+        </div>
+        <div className="panel rounded-2xl p-5">
+          <div className="mb-4 flex items-center justify-between">
+            <div className="text-sm font-semibold text-slate-900">Top 工具</div>
+            <span className="rounded-full border border-slate-200 bg-white/80 px-2 py-1 text-[11px] text-slate-600">
+              使用频率
+            </span>
+          </div>
+          <ol className="space-y-2 text-sm text-slate-600">
+            {topTools.length === 0 ? (
+              <li className="text-slate-500">暂无工具调用</li>
+            ) : (
+              topTools.map(([name, count]) => (
+                <li key={name} className="flex items-center justify-between gap-2">
+                  <span className="truncate text-slate-700">{name}</span>
+                  <span className="mono text-xs text-slate-500">{formatInt(count)}</span>
+                </li>
+              ))
+            )}
+          </ol>
+        </div>
       </div>
     </section>
   );

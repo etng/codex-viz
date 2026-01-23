@@ -30,7 +30,7 @@ export default function UserWordCloud() {
 
   if (error) {
     return (
-      <section className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+      <section className="panel rounded-2xl p-4 text-sm text-rose-600">
         词云加载失败：{String(error)}
       </section>
     );
@@ -38,7 +38,7 @@ export default function UserWordCloud() {
 
   if (isLoading || !data) {
     return (
-      <section className="rounded-xl border border-zinc-200 bg-white p-4 text-sm text-zinc-700">
+      <section className="panel rounded-2xl p-4 text-sm text-slate-500">
         正在生成词云…
       </section>
     );
@@ -46,29 +46,38 @@ export default function UserWordCloud() {
 
   if (!data.items.length) {
     return (
-      <section className="rounded-xl border border-zinc-200 bg-white p-4 text-sm text-zinc-700">
+      <section className="panel rounded-2xl p-4 text-sm text-slate-500">
         最近 {data.days ?? "全部"} 天暂无可展示的词（min={data.minCount}）。
       </section>
     );
   }
 
+  const palette = ["#2563eb", "#16a34a", "#f59e0b", "#0ea5e9", "#22c55e", "#06b6d4", "#a855f7"];
+
   return (
-    <section className="rounded-xl border border-zinc-200 bg-white p-4">
+    <section className="panel rounded-2xl p-5">
       <div className="mb-2 flex items-end justify-between gap-2">
         <div>
-          <div className="text-sm font-medium text-zinc-900">User 输入词云</div>
-          <div className="mt-1 text-xs text-zinc-500">
+          <div className="text-sm font-semibold text-slate-900">User 输入词云</div>
+          <div className="mt-1 text-xs text-slate-500">
             最近 {data.days ?? "全部"} 天 · min={data.minCount} · top={data.limit} · unique≈{data.totalUnique}
           </div>
         </div>
       </div>
       {!pluginReady ? (
-        <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3 text-sm text-zinc-700">正在加载词云组件…</div>
+        <div className="rounded-xl border border-slate-200 bg-white/80 p-3 text-sm text-slate-500">
+          正在加载词云组件…
+        </div>
       ) : (
         <ReactECharts
           style={{ height: 360 }}
           option={{
-            tooltip: { formatter: (p: any) => `${p.name}: ${p.value}` },
+            tooltip: {
+              formatter: (p: any) => `${p.name}: ${p.value}`,
+              backgroundColor: "rgba(255, 255, 255, 0.95)",
+              borderColor: "rgba(148, 163, 184, 0.35)",
+              textStyle: { color: "#0f172a" }
+            },
             series: [
               {
                 type: "wordCloud",
@@ -77,8 +86,8 @@ export default function UserWordCloud() {
                 sizeRange: [10, 52],
                 rotationRange: [-30, 30],
                 textStyle: {
-                  fontFamily:
-                    "-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica, Arial, PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif"
+                  fontFamily: "\"Space Grotesk\", \"Noto Sans SC\", \"Microsoft YaHei\", sans-serif",
+                  color: () => palette[Math.floor(Math.random() * palette.length)]
                 },
                 emphasis: { focus: "self" },
                 data: data.items
