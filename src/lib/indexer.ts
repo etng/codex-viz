@@ -13,7 +13,7 @@ import type {
 } from "@/lib/types";
 import { getDb, migrateDb } from "@/lib/sqlite";
 
-const INDEX_VERSION = 1;
+const INDEX_VERSION = 3;
 const SESSION_DIR = "session";
 
 let inMemoryIndex: IndexSnapshot | null = null;
@@ -108,11 +108,39 @@ function extractMessageText(payload: any): string | null {
   return txt ? txt : null;
 }
 
+function toNum(value: any) {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function normalizeTokenUsage(usage: any) {
+  return {
+    total: toNum(usage?.total_tokens),
+    input: toNum(usage?.input_tokens),
+    output: toNum(usage?.output_tokens),
+    cachedInput: toNum(usage?.cached_input_tokens),
+    reasoningOutput: toNum(usage?.reasoning_output_tokens)
+  };
+}
+
 async function buildFileIndex(file: string) {
   const sessionId = path.basename(file, ".jsonl");
   const tools: Record<string, number> = {};
   const callIdToToolName = new Map<string, string>();
   const userTexts: string[] = [];
+  const tokenUsage = {
+    total: 0,
+    input: 0,
+    output: 0,
+    cachedInput: 0,
+    reasoningOutput: 0
+  };
+  let lastTotalUsage: {
+    total: number;
+    input: number;
+    output: number;
+    cachedInput: number;
+    reasoningOutput: number;
+  } | null = null;
 
   let summary: SessionSummary = {
     id: sessionId,
@@ -151,6 +179,49 @@ async function buildFileIndex(file: string) {
     if (obj.type === "event_msg") {
       const pt = obj.payload?.type;
       if (pt === "turn_aborted") summary.errors += 1;
+      if (pt === "token_count") {
+        const usageTotal = normalizeTokenUsage(obj.payload?.info?.total_token_usage);
+        const usageLast = normalizeTokenUsage(obj.payload?.info?.last_token_usage);
+        const hasTotal = usageTotal.total > 0;
+        const hasLast = usageLast.total > 0;
+
+        if (hasTotal) {
+          if (lastTotalUsage) {
+            const delta = {
+              total: Math.max(0, usageTotal.total - lastTotalUsage.total),
+              input: Math.max(0, usageTotal.input - lastTotalUsage.input),
+              output: Math.max(0, usageTotal.output - lastTotalUsage.output),
+              cachedInput: Math.max(0, usageTotal.cachedInput - lastTotalUsage.cachedInput),
+              reasoningOutput: Math.max(0, usageTotal.reasoningOutput - lastTotalUsage.reasoningOutput)
+            };
+            tokenUsage.total += delta.total;
+            tokenUsage.input += delta.input;
+            tokenUsage.output += delta.output;
+            tokenUsage.cachedInput += delta.cachedInput;
+            tokenUsage.reasoningOutput += delta.reasoningOutput;
+            if (usageTotal.total < lastTotalUsage.total && hasLast) {
+              tokenUsage.total += usageLast.total;
+              tokenUsage.input += usageLast.input;
+              tokenUsage.output += usageLast.output;
+              tokenUsage.cachedInput += usageLast.cachedInput;
+              tokenUsage.reasoningOutput += usageLast.reasoningOutput;
+            }
+          } else if (hasLast) {
+            tokenUsage.total += usageLast.total;
+            tokenUsage.input += usageLast.input;
+            tokenUsage.output += usageLast.output;
+            tokenUsage.cachedInput += usageLast.cachedInput;
+            tokenUsage.reasoningOutput += usageLast.reasoningOutput;
+          }
+          lastTotalUsage = usageTotal;
+        } else if (hasLast) {
+          tokenUsage.total += usageLast.total;
+          tokenUsage.input += usageLast.input;
+          tokenUsage.output += usageLast.output;
+          tokenUsage.cachedInput += usageLast.cachedInput;
+          tokenUsage.reasoningOutput += usageLast.reasoningOutput;
+        }
+      }
     }
 
     if (obj.type === "response_item") {
@@ -203,7 +274,7 @@ async function buildFileIndex(file: string) {
 
   const dailyKey = dayKeyFromIso(summary.startedAt ?? firstTs);
   const userTokenCounts = tokenizeUserTexts(userTexts);
-  return { sessionId, summary, tools, dailyKey, userTokenCounts };
+  return { sessionId, summary, tools, dailyKey, userTokenCounts, tokenUsage };
 }
 
 function stripCodeAndUrls(input: string) {
@@ -355,11 +426,13 @@ async function refreshSqliteIndex(): Promise<void> {
     INSERT INTO files (
       file, mtime_ms, size, session_id, daily_key,
       started_at, ended_at, duration_sec, cwd, originator, cli_version,
-      messages, tool_calls, errors
+      messages, tool_calls, errors,
+      tokens_total, tokens_input, tokens_output, tokens_cached_input, tokens_reasoning_output
     ) VALUES (
       @file, @mtimeMs, @size, @sessionId, @dailyKey,
       @startedAt, @endedAt, @durationSec, @cwd, @originator, @cliVersion,
-      @messages, @toolCalls, @errors
+      @messages, @toolCalls, @errors,
+      @tokensTotal, @tokensInput, @tokensOutput, @tokensCachedInput, @tokensReasoningOutput
     )
     ON CONFLICT(file) DO UPDATE SET
       mtime_ms=excluded.mtime_ms,
@@ -374,7 +447,12 @@ async function refreshSqliteIndex(): Promise<void> {
       cli_version=excluded.cli_version,
       messages=excluded.messages,
       tool_calls=excluded.tool_calls,
-      errors=excluded.errors
+      errors=excluded.errors,
+      tokens_total=excluded.tokens_total,
+      tokens_input=excluded.tokens_input,
+      tokens_output=excluded.tokens_output,
+      tokens_cached_input=excluded.tokens_cached_input,
+      tokens_reasoning_output=excluded.tokens_reasoning_output
   `);
   const upsertTool = d.prepare(`
     INSERT INTO tool_counts (file, tool_name, count)
@@ -386,9 +464,15 @@ async function refreshSqliteIndex(): Promise<void> {
     VALUES (?, ?, ?)
     ON CONFLICT(file, token) DO UPDATE SET count=excluded.count
   `);
+  const storedVersion = Number((d.prepare("SELECT value FROM meta WHERE key='version'").get() as any)?.value ?? 0);
+  const needRebuild = storedVersion !== INDEX_VERSION;
 
   d.exec("BEGIN IMMEDIATE");
   try {
+    if (needRebuild) {
+      d.exec("DELETE FROM tool_counts; DELETE FROM user_token_counts; DELETE FROM files;");
+    }
+
     const existingRows = d.prepare("SELECT file FROM files").all() as { file: string }[];
     for (const row of existingRows) {
       if (!fileSet.has(row.file)) {
@@ -424,7 +508,12 @@ async function refreshSqliteIndex(): Promise<void> {
         cliVersion: built.summary.cliVersion,
         messages: built.summary.messages,
         toolCalls: built.summary.toolCalls,
-        errors: built.summary.errors
+        errors: built.summary.errors,
+        tokensTotal: built.tokenUsage.total,
+        tokensInput: built.tokenUsage.input,
+        tokensOutput: built.tokenUsage.output,
+        tokensCachedInput: built.tokenUsage.cachedInput,
+        tokensReasoningOutput: built.tokenUsage.reasoningOutput
       });
 
       deleteToolCounts.run(file);
@@ -460,13 +549,13 @@ function queryIndexSnapshot(): IndexSnapshot {
 
   const totalsRow = d
     .prepare(
-      "SELECT COUNT(*) as files, COUNT(*) as sessions, COALESCE(SUM(messages),0) as messages, COALESCE(SUM(tool_calls),0) as toolCalls, COALESCE(SUM(errors),0) as errors FROM files"
+      "SELECT COUNT(*) as files, COUNT(*) as sessions, COALESCE(SUM(messages),0) as messages, COALESCE(SUM(tool_calls),0) as toolCalls, COALESCE(SUM(errors),0) as errors, COALESCE(SUM(tokens_total),0) as tokensTotal, COALESCE(SUM(tokens_input),0) as tokensInput, COALESCE(SUM(tokens_output),0) as tokensOutput, COALESCE(SUM(tokens_cached_input),0) as tokensCachedInput, COALESCE(SUM(tokens_reasoning_output),0) as tokensReasoningOutput FROM files"
     )
     .get() as any;
 
   const dailyRows = d
     .prepare(
-      "SELECT daily_key as day, COUNT(*) as sessions, COALESCE(SUM(messages),0) as messages, COALESCE(SUM(tool_calls),0) as toolCalls, COALESCE(SUM(errors),0) as errors FROM files GROUP BY daily_key"
+      "SELECT daily_key as day, COUNT(*) as sessions, COALESCE(SUM(messages),0) as messages, COALESCE(SUM(tool_calls),0) as toolCalls, COALESCE(SUM(errors),0) as errors, COALESCE(SUM(tokens_total),0) as tokensTotal, COALESCE(SUM(tokens_input),0) as tokensInput, COALESCE(SUM(tokens_output),0) as tokensOutput, COALESCE(SUM(tokens_cached_input),0) as tokensCachedInput, COALESCE(SUM(tokens_reasoning_output),0) as tokensReasoningOutput FROM files GROUP BY daily_key"
     )
     .all() as any[];
 
@@ -476,7 +565,12 @@ function queryIndexSnapshot(): IndexSnapshot {
       sessions: Number(r.sessions ?? 0),
       messages: Number(r.messages ?? 0),
       toolCalls: Number(r.toolCalls ?? 0),
-      errors: Number(r.errors ?? 0)
+      errors: Number(r.errors ?? 0),
+      tokensTotal: Number(r.tokensTotal ?? 0),
+      tokensInput: Number(r.tokensInput ?? 0),
+      tokensOutput: Number(r.tokensOutput ?? 0),
+      tokensCachedInput: Number(r.tokensCachedInput ?? 0),
+      tokensReasoningOutput: Number(r.tokensReasoningOutput ?? 0)
     };
   }
 
@@ -496,7 +590,12 @@ function queryIndexSnapshot(): IndexSnapshot {
       sessions: Number(totalsRow.sessions ?? 0),
       messages: Number(totalsRow.messages ?? 0),
       toolCalls: Number(totalsRow.toolCalls ?? 0),
-      errors: Number(totalsRow.errors ?? 0)
+      errors: Number(totalsRow.errors ?? 0),
+      tokensTotal: Number(totalsRow.tokensTotal ?? 0),
+      tokensInput: Number(totalsRow.tokensInput ?? 0),
+      tokensOutput: Number(totalsRow.tokensOutput ?? 0),
+      tokensCachedInput: Number(totalsRow.tokensCachedInput ?? 0),
+      tokensReasoningOutput: Number(totalsRow.tokensReasoningOutput ?? 0)
     },
     tools,
     daily

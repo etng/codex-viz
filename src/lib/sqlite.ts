@@ -72,4 +72,18 @@ export function migrateDb() {
 
     CREATE INDEX IF NOT EXISTS idx_user_token_counts_token ON user_token_counts(token);
   `);
+
+  const cols = d.prepare("PRAGMA table_info(files)").all() as { name: string }[];
+  const colSet = new Set(cols.map((c) => c.name));
+  const ensureColumn = (name: string, def: string) => {
+    if (colSet.has(name)) return;
+    d.exec(`ALTER TABLE files ADD COLUMN ${def}`);
+    colSet.add(name);
+  };
+
+  ensureColumn("tokens_total", "tokens_total INTEGER NOT NULL DEFAULT 0");
+  ensureColumn("tokens_input", "tokens_input INTEGER NOT NULL DEFAULT 0");
+  ensureColumn("tokens_output", "tokens_output INTEGER NOT NULL DEFAULT 0");
+  ensureColumn("tokens_cached_input", "tokens_cached_input INTEGER NOT NULL DEFAULT 0");
+  ensureColumn("tokens_reasoning_output", "tokens_reasoning_output INTEGER NOT NULL DEFAULT 0");
 }

@@ -3,6 +3,11 @@ export type DailyAgg = {
   messages: number;
   toolCalls: number;
   errors: number;
+  tokensTotal: number;
+  tokensInput: number;
+  tokensOutput: number;
+  tokensCachedInput: number;
+  tokensReasoningOutput: number;
 };
 
 export type SessionSummary = {
@@ -30,6 +35,11 @@ export type IndexSnapshot = {
     messages: number;
     toolCalls: number;
     errors: number;
+    tokensTotal: number;
+    tokensInput: number;
+    tokensOutput: number;
+    tokensCachedInput: number;
+    tokensReasoningOutput: number;
   };
   tools: Record<string, number>;
   daily: Record<string, DailyAgg>;
