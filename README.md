@@ -1,6 +1,9 @@
 # Codex Viz
 
+<img width="2940" height="2689" alt="image" src="https://github.com/user-attachments/assets/b75a3ca9-73b5-41b1-8010-8279afe25fad" />
+
 [English](#codex-viz-local) | [中文](#codex-viz本地)
+
 
 Codex Viz is a local-first dashboard for exploring your Codex CLI sessions. It indexes your local JSONL history and turns it into clear trends, token usage, tool insights, and a focused word cloud.
 
