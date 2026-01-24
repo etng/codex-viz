@@ -9,7 +9,8 @@ import type {
   SessionSummary,
   SessionTimelineResponse,
   SessionsListResponse,
-  TimelineEvent
+  TimelineEvent,
+  TokenUsage
 } from "@/lib/types";
 import { getDb, migrateDb } from "@/lib/sqlite";
 
@@ -91,7 +92,12 @@ function summarizeFromMeta(sessionId: string, file: string, meta: any): SessionS
     cliVersion: typeof payload?.cli_version === "string" ? payload.cli_version : null,
     messages: 0,
     toolCalls: 0,
-    errors: 0
+    errors: 0,
+    tokensTotal: 0,
+    tokensInput: 0,
+    tokensOutput: 0,
+    tokensCachedInput: 0,
+    tokensReasoningOutput: 0
   };
 }
 
@@ -120,6 +126,16 @@ function normalizeTokenUsage(usage: any) {
     cachedInput: toNum(usage?.cached_input_tokens),
     reasoningOutput: toNum(usage?.reasoning_output_tokens)
   };
+}
+
+function hasTokenUsageData(usage: TokenUsage) {
+  return (
+    usage.total > 0 ||
+    usage.input > 0 ||
+    usage.output > 0 ||
+    usage.cachedInput > 0 ||
+    usage.reasoningOutput > 0
+  );
 }
 
 async function buildFileIndex(file: string) {
@@ -153,7 +169,12 @@ async function buildFileIndex(file: string) {
     cliVersion: null,
     messages: 0,
     toolCalls: 0,
-    errors: 0
+    errors: 0,
+    tokensTotal: 0,
+    tokensInput: 0,
+    tokensOutput: 0,
+    tokensCachedInput: 0,
+    tokensReasoningOutput: 0
   };
 
   let firstTs: string | null = null;
@@ -221,6 +242,7 @@ async function buildFileIndex(file: string) {
           tokenUsage.cachedInput += usageLast.cachedInput;
           tokenUsage.reasoningOutput += usageLast.reasoningOutput;
         }
+
       }
     }
 
@@ -641,19 +663,24 @@ export async function listSessions(options: {
   const totalRow = d.prepare(`SELECT COUNT(*) as c FROM files ${whereSql}`).get(...params) as any;
   const rows = d
     .prepare(
-      `SELECT
-        session_id as id,
-        file,
-        started_at as startedAt,
-        ended_at as endedAt,
-        duration_sec as durationSec,
-        cwd,
-        originator,
-        cli_version as cliVersion,
-        messages,
-        tool_calls as toolCalls,
-        errors
-      FROM files
+    `SELECT
+      session_id as id,
+      file,
+      started_at as startedAt,
+      ended_at as endedAt,
+      duration_sec as durationSec,
+      cwd,
+      originator,
+      cli_version as cliVersion,
+      messages,
+      tool_calls as toolCalls,
+      errors,
+      tokens_total as tokensTotal,
+      tokens_input as tokensInput,
+      tokens_output as tokensOutput,
+      tokens_cached_input as tokensCachedInput,
+      tokens_reasoning_output as tokensReasoningOutput
+    FROM files
       ${whereSql}
       ORDER BY (started_at IS NULL), started_at DESC
       LIMIT ? OFFSET ?`
@@ -671,7 +698,12 @@ export async function listSessions(options: {
     cliVersion: r.cliVersion ?? null,
     messages: Number(r.messages ?? 0),
     toolCalls: Number(r.toolCalls ?? 0),
-    errors: Number(r.errors ?? 0)
+    errors: Number(r.errors ?? 0),
+    tokensTotal: Number(r.tokensTotal ?? 0),
+    tokensInput: Number(r.tokensInput ?? 0),
+    tokensOutput: Number(r.tokensOutput ?? 0),
+    tokensCachedInput: Number(r.tokensCachedInput ?? 0),
+    tokensReasoningOutput: Number(r.tokensReasoningOutput ?? 0)
   }));
 
   return { generatedAt: new Date().toISOString(), total: Number(totalRow.c ?? 0), items };
@@ -765,7 +797,12 @@ async function getSessionById(sessionId: string): Promise<SessionSummary | null>
         cli_version as cliVersion,
         messages,
         tool_calls as toolCalls,
-        errors
+        errors,
+        tokens_total as tokensTotal,
+        tokens_input as tokensInput,
+        tokens_output as tokensOutput,
+        tokens_cached_input as tokensCachedInput,
+        tokens_reasoning_output as tokensReasoningOutput
       FROM files WHERE session_id = ? LIMIT 1`
     )
     .get(sessionId) as any;
@@ -781,7 +818,12 @@ async function getSessionById(sessionId: string): Promise<SessionSummary | null>
     cliVersion: row.cliVersion ?? null,
     messages: Number(row.messages ?? 0),
     toolCalls: Number(row.toolCalls ?? 0),
-    errors: Number(row.errors ?? 0)
+    errors: Number(row.errors ?? 0),
+    tokensTotal: Number(row.tokensTotal ?? 0),
+    tokensInput: Number(row.tokensInput ?? 0),
+    tokensOutput: Number(row.tokensOutput ?? 0),
+    tokensCachedInput: Number(row.tokensCachedInput ?? 0),
+    tokensReasoningOutput: Number(row.tokensReasoningOutput ?? 0)
   };
 }
 
@@ -830,6 +872,7 @@ async function buildTimeline(file: string, summary: SessionSummary): Promise<Ses
   let truncated = false;
   const maxEvents = 5000;
   const callIdToName = new Map<string, string>();
+  let lastTotalUsage: TokenUsage | null = null;
 
   const stream = fs.createReadStream(file, "utf8");
   const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
@@ -840,8 +883,53 @@ async function buildTimeline(file: string, summary: SessionSummary): Promise<Ses
 
     const ts = toIso(obj.timestamp) ?? "";
 
-    if (obj.type === "event_msg" && obj.payload?.type === "turn_aborted") {
-      events.push({ ts, kind: "error", text: "turn_aborted" });
+    if (obj.type === "event_msg") {
+      const pt = obj.payload?.type;
+      if (pt === "turn_aborted") {
+        events.push({ ts, kind: "error", text: "turn_aborted" });
+      } else if (pt === "token_count") {
+        const usageTotal = normalizeTokenUsage(obj.payload?.info?.total_token_usage);
+        const usageLast = normalizeTokenUsage(obj.payload?.info?.last_token_usage);
+        const hasTotal = hasTokenUsageData(usageTotal);
+        const hasLast = hasTokenUsageData(usageLast);
+        let deltaUsage: TokenUsage | null = null;
+        if (hasTotal) {
+          if (lastTotalUsage) {
+            deltaUsage = {
+              total: Math.max(0, usageTotal.total - lastTotalUsage.total),
+              input: Math.max(0, usageTotal.input - lastTotalUsage.input),
+              output: Math.max(0, usageTotal.output - lastTotalUsage.output),
+              cachedInput: Math.max(0, usageTotal.cachedInput - lastTotalUsage.cachedInput),
+              reasoningOutput: Math.max(0, usageTotal.reasoningOutput - lastTotalUsage.reasoningOutput)
+            };
+            if (usageTotal.total < lastTotalUsage.total && hasLast) {
+              deltaUsage.total += usageLast.total;
+              deltaUsage.input += usageLast.input;
+              deltaUsage.output += usageLast.output;
+              deltaUsage.cachedInput += usageLast.cachedInput;
+              deltaUsage.reasoningOutput += usageLast.reasoningOutput;
+            }
+          } else if (hasLast) {
+            deltaUsage = { ...usageLast };
+          }
+          lastTotalUsage = usageTotal;
+        } else if (hasLast) {
+          deltaUsage = { ...usageLast };
+        }
+
+        const totalUsageForEvent = hasTotal ? usageTotal : null;
+        const deltaUsageForEvent = deltaUsage && hasTokenUsageData(deltaUsage) ? deltaUsage : null;
+        if (totalUsageForEvent || deltaUsageForEvent) {
+          events.push({
+            ts,
+            kind: "token_count",
+            tokenUsage: {
+              total: totalUsageForEvent,
+              delta: deltaUsageForEvent
+            }
+          });
+        }
+      }
     }
 
     if (obj.type === "response_item") {
@@ -900,7 +988,12 @@ export async function getSessionTimeline(sessionId: string): Promise<SessionTime
         cliVersion: null,
         messages: 0,
         toolCalls: 0,
-        errors: 1
+        errors: 1,
+        tokensTotal: 0,
+        tokensInput: 0,
+        tokensOutput: 0,
+        tokensCachedInput: 0,
+        tokensReasoningOutput: 0
       },
       truncated: false,
       events: [{ ts: new Date().toISOString(), kind: "error", text: "未找到对应 session 文件" }]
@@ -911,7 +1004,27 @@ export async function getSessionTimeline(sessionId: string): Promise<SessionTime
   const cachePath = timelineCachePath(cacheDir, sessionId);
   const cached = await readJsonFile<SessionTimelineResponse & { fileMtimeMs?: number; fileSize?: number }>(cachePath);
 
-  if (cached && cached.fileMtimeMs === st.mtimeMs && cached.fileSize === st.size) {
+  const cacheHasTokenSummary =
+    cached &&
+    cached.summary &&
+    typeof cached.summary.tokensTotal === "number" &&
+    typeof cached.summary.tokensInput === "number" &&
+    typeof cached.summary.tokensOutput === "number" &&
+    typeof cached.summary.tokensCachedInput === "number" &&
+    typeof cached.summary.tokensReasoningOutput === "number";
+  const cacheHasTokenDelta =
+    !cached?.events ||
+    !cached.events.some(
+      (event) => event.kind === "token_count" && (!event.tokenUsage || !("delta" in event.tokenUsage))
+    );
+
+  if (
+    cached &&
+    cached.fileMtimeMs === st.mtimeMs &&
+    cached.fileSize === st.size &&
+    cacheHasTokenSummary &&
+    cacheHasTokenDelta
+  ) {
     return { summary: cached.summary, truncated: cached.truncated, events: cached.events };
   }
 

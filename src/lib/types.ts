@@ -1,3 +1,16 @@
+export type TokenUsage = {
+  total: number;
+  input: number;
+  output: number;
+  cachedInput: number;
+  reasoningOutput: number;
+};
+
+export type TokenUsageInfo = {
+  total: TokenUsage | null;
+  delta: TokenUsage | null;
+};
+
 export type DailyAgg = {
   sessions: number;
   messages: number;
@@ -22,6 +35,11 @@ export type SessionSummary = {
   messages: number;
   toolCalls: number;
   errors: number;
+  tokensTotal: number;
+  tokensInput: number;
+  tokensOutput: number;
+  tokensCachedInput: number;
+  tokensReasoningOutput: number;
 };
 
 export type IndexSnapshot = {
@@ -53,9 +71,10 @@ export type SessionsListResponse = {
 
 export type TimelineEvent = {
   ts: string;
-  kind: "user" | "assistant" | "tool_call" | "tool_output" | "error" | "other";
+  kind: "user" | "assistant" | "tool_call" | "tool_output" | "error" | "other" | "token_count";
   name?: string;
   text?: string;
+  tokenUsage?: TokenUsageInfo;
 };
 
 export type SessionTimelineResponse = {
