@@ -115,23 +115,29 @@ export default function Dashboard() {
 
   return (
     <section className="space-y-6">
-      <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+      <div className="mb-2 flex flex-col items-start justify-between gap-4 rounded-3xl border border-slate-200 bg-white/50 p-6 shadow-sm backdrop-blur-xl md:flex-row md:items-center">
         <div>
-          <div className="inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs text-blue-600">
-            Local-first Intelligence
+          <div className="flex items-center gap-3">
+            <h2 className="text-lg font-bold text-slate-900">数据概览</h2>
+            <div className="flex items-center gap-2 rounded-full border border-blue-100 bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-600 shadow-sm">
+              <span className="relative flex h-1.5 w-1.5">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-400 opacity-75"></span>
+                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-blue-500"></span>
+              </span>
+              Local-first Intelligence
+            </div>
           </div>
-          <h1 className="mt-3 text-3xl font-semibold text-slate-900 md:text-4xl">Codex Viz 控制台</h1>
-          <p className="mt-2 max-w-2xl text-sm text-slate-600">
-            聚焦可追溯的趋势、Token 与工具效率。当前区间 {rangeLabel}，拖动时间轴即可重算指标。
+          <p className="mt-1.5 text-sm text-slate-500">
+            当前显示 {rangeLabel} 的会话数据，支持拖动时间轴进行多维分析。
           </p>
         </div>
-        <div className="flex flex-col items-start gap-3 md:items-end">
-          <div className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-xs text-slate-600">
-            更新于 {generatedAt}
-          </div>
-          <div className="flex items-center gap-2 text-xs text-slate-500">
-            <span className="h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.45)]" />
-            索引正常
+        <div className="flex items-center gap-3 text-xs">
+          <div className="flex flex-col items-end gap-1">
+            <span className="text-slate-400">更新于 {generatedAt}</span>
+            <span className="flex items-center gap-1 font-medium text-emerald-600">
+              索引服务正常
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shadow-[0_0_4px_rgba(16,185,129,0.5)]" />
+            </span>
           </div>
         </div>
       </div>
