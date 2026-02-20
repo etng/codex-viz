@@ -123,3 +123,34 @@ git push me master
 - `docker build` 通过
 - `docker run` 启动通过
 - 当前构建出的本地镜像体积约 `236MB`
+
+## 直接使用 GHCR 镜像启动（最终命令）
+
+### 方式一：docker run
+
+```bash
+docker run --rm -p 3000:3000 \
+  -e CODEX_SESSIONS_DIR=/codex-sessions \
+  -e CODEX_VIZ_CACHE_DIR=/codex-viz-cache \
+  -v "$HOME/.codex/sessions:/codex-sessions:ro" \
+  -v "$HOME/.codex-viz/cache:/codex-viz-cache" \
+  ghcr.io/etng/codex-viz:latest
+```
+
+如果 `latest` 还没生成，可临时使用：
+
+```bash
+ghcr.io/etng/codex-viz:master
+```
+
+### 方式二：docker compose
+
+```bash
+IMAGE=ghcr.io/etng/codex-viz:latest docker compose up -d --no-build --pull always
+```
+
+如果 `latest` 还没生成，可临时使用：
+
+```bash
+IMAGE=ghcr.io/etng/codex-viz:master docker compose up -d --no-build --pull always
+```

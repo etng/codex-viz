@@ -1,9 +1,9 @@
 services:
   codex-viz:
+    image: ${IMAGE:-codex-viz:local}
     build:
       context: .
       dockerfile: Dockerfile
-    image: codex-viz:local
     container_name: codex-viz
     ports:
       - "3000:3000"
