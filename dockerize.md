@@ -17,6 +17,7 @@
   - `builder` 执行 `pnpm build`
   - `runner` 仅复制 `.next/standalone` 与 `.next/static`
 - 运行层不包含完整 `node_modules` 源目录，降低镜像体积。
+- `builder` 固定在 `BUILDPLATFORM` 执行，避免在 QEMU 下构建 `arm64` 时触发 `next build` 的 `SIGILL`。
 
 3. `.dockerignore`
 - 排除 `.git`、`node_modules`、`.next` 等无关上下文，减少构建上下文体积与传输耗时。
