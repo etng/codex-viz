@@ -1,0 +1,11 @@
+.git
+.github
+.next
+node_modules
+pnpm-store
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+README.md
+DEVELOPMENT.md
+*.md

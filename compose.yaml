@@ -1,0 +1,16 @@
+services:
+  codex-viz:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: codex-viz:local
+    container_name: codex-viz
+    ports:
+      - "3000:3000"
+    environment:
+      CODEX_SESSIONS_DIR: /codex-sessions
+      CODEX_VIZ_CACHE_DIR: /codex-viz-cache
+    volumes:
+      - ${HOME}/.codex/sessions:/codex-sessions:ro
+      - ${HOME}/.codex-viz/cache:/codex-viz-cache
+    restart: unless-stopped
