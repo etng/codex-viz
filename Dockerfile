@@ -1,14 +1,17 @@
-FROM node:24-alpine AS base
+ARG BUILDPLATFORM
+ARG TARGETPLATFORM
+
+FROM --platform=$BUILDPLATFORM node:24-alpine AS base
 WORKDIR /app
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
 RUN corepack enable
 
-FROM base AS deps
+FROM --platform=$BUILDPLATFORM base AS deps
 COPY package.json pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
 
-FROM base AS builder
+FROM --platform=$BUILDPLATFORM base AS builder
 ENV NEXT_TELEMETRY_DISABLED=1
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
